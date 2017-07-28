@@ -1,0 +1,4 @@
+.vagrant
+keys/*
+!keys/README.md
+configuration.yml
