@@ -1,9 +1,0 @@
-name: envoi
-enabled: true
-#build_image: /Projects/Envoi/clients/development
-build_image: /Projects/Docker/testapp
-build_image_name: testapp
-domains: 
-    - testapp.dev 
-    - test.testapp.dev 
-    - another.testapp.dev

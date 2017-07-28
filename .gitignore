@@ -1,4 +1,7 @@
 .vagrant
 keys/*
 !keys/README.md
+sites/*
+!sites/template.yml
+
 configuration.yml
