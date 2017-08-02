@@ -1,0 +1,45 @@
+---
+version: '3'
+services:
+  nginx-proxy:
+    image: jwilder/nginx-proxy
+    container_name: nginx-proxy
+    ports:
+    - 80:80
+    volumes:
+    - "/var/run/docker.sock:/tmp/docker.sock:ro"
+    networks:
+    - proxy
+  another-app:
+    image: another-app
+    container_name: another-app
+    networks:
+    - anothernetwork
+    - database
+    - proxy
+    environment:
+    - VIRTUAL_HOST=another.dev
+  database:
+    image: database
+    container_name: database
+    networks:
+    - database
+    - proxy
+    ports:
+    - 3306:3306
+    environment:
+    - VIRTUAL_HOST=database.dev
+  envoidocker:
+    image: envoidocker
+    container_name: envoidocker
+    networks:
+    - envoi
+    - database
+    - proxy
+    environment:
+    - VIRTUAL_HOST=envoidocker.dev,test.envoidocker.dev
+networks:
+  proxy: {}
+  anothernetwork: {}
+  database: {}
+  envoi: {}

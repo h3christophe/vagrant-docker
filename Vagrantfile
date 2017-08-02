@@ -54,14 +54,15 @@ Vagrant.configure("2") do |config|
     # Check That plugins are installed properly
     [
         { :name => "vagrant-hostmanager", :version => ">= 1.8.6" },
-        { :name => "vagrant-auto_network", :version => ">= 1.0.2" }
+        { :name => "vagrant-auto_network", :version => ">= 1.0.2" },
+        { :name => "vagrant-docker-compose", :version => ">= 1.3.0" },
+        { :name => "vagrant-triggers", :version => ">= 0.5.3" }
     ].each do |plugin|
 
         if not Vagrant.has_plugin?(plugin[:name], plugin[:version])
           raise "#{plugin[:name]} #{plugin[:version]} is required. Please run `vagrant plugin install #{plugin[:name]}`"
         end
     end 
-
 
     config.ssh.forward_agent    = true
     
@@ -82,37 +83,101 @@ Vagrant.configure("2") do |config|
     configuration = YAML::load_file(File.open('configuration.yml'));
     boxName = configuration['machine_name']
 
-    #puts "*TEST (%s)" %[configuration]
-      
-    allDomains = Array.new
-  
+    # All Domains.
+    allDomains = Array.new 
     Dir.glob('./sites/*.yml').each do |setting_file|
         settings = YAML::load_file(setting_file);
-        #puts "*Settings (%s)" %[settings]
-        domains = settings['domains']
-        if domains.kind_of?(Array) and !domains.empty?()
-            allDomains = allDomains + settings['domains']
+        enabled = settings['enabled']
+        if enabled
+            #puts "*Settings (%s)" %[settings]
+            domains = settings['domains']
+            if domains.kind_of?(Array) and !domains.empty?()
+                allDomains = allDomains + settings['domains']
+            end
         end
     end
-    
 
-    #puts "*ALL Domains (%s)" %[allDomains]
+    # Build Docker Compose When Provisioning
+    config.trigger.before :provision do
+        info "Refreshing DockerCompose File"
+
+        dockerFilePath = 'docker-compose.yml'
+
+        DockerCompose = {}
+        DockerCompose['version'] = "3"
+
+        allNetworks = Array.new;
+        services = {};
+
+        # NGINX proxy
+        # ----------------------
+        proxyService = {}
+        proxyService['image'] = "jwilder/nginx-proxy"
+        proxyService['container_name'] = "nginx-proxy"
+        proxyService['ports'] = ["80:80"]
+        proxyService['volumes'] = ["/var/run/docker.sock:/tmp/docker.sock:ro"]
+        proxyService['networks'] = ['proxy']
+        allNetworks.push('proxy');
+        services['nginx-proxy'] = proxyService 
+
+        # Other Sites
+        # ----------------------
+        Dir.glob('./sites/*.yml').each do |setting_file|
+            settings = YAML::load_file(setting_file);
+            enabled = settings['enabled']
+            if enabled
+                name = settings['name']
+
+                service = {}
+                service['image'] = name
+                service['container_name'] = settings['name']
+
+                if settings['networks']
+                    service['networks'] = settings['networks'] ? settings['networks'] : Array.new
+                    service['networks'].push('proxy')
+                    allNetworks = allNetworks + settings['networks']
+                end 
+
+                if settings['ports']
+                    service['ports'] = settings['ports']
+                end 
+
+                service['environment'] = Array.new
+                if settings['domains']
+                    service['environment'].push( "VIRTUAL_HOST=" + settings['domains'].join(','))
+                end
+
+                services[name] = service
+            end 
+        end
+
+        DockerCompose['services'] = services
+
+        DockerCompose['networks'] = {}
+        for network in allNetworks
+            DockerCompose['networks'][network] = {}
+        end
+
+        # Write to File
+        File.open(dockerFilePath, 'w') {|f| f.write DockerCompose.to_yaml }
+
+    end
     
-    ## Define the Virtual Machine
+    # Define Box
     config.vm.define boxName do |node|
 
         node.vm.box = configuration['box'] ? configuration['box'] : bento/ubuntu-16.04
         node.vm.network :private_network, :auto_network => true
 
         # Hostnames
-        # ============
+        # ======================
         node.vm.hostname = configuration['hostname'] 
         if allDomains.kind_of?(Array) and !allDomains.empty?()
             node.hostmanager.aliases = allDomains
         end
 
         # SSH KEY
-        # ==================
+        # ======================
         node.ssh.private_key_path = [ configuration['ssh_private'], "~/.vagrant.d/insecure_private_key"]
         node.vm.provision "file", source: configuration['ssh_public'], destination: "~/.ssh/authorized_keys"
 
@@ -129,7 +194,7 @@ EOC
 SCRIPT
 
         # Virtual Box
-        # ============
+        # ======================
         node.vm.provider :virtualbox do |vb|
             vb.customize ["modifyvm", :id, "--memory" , configuration['box_memory'] ? configuration['box_memory'] : "2048"]
             vb.customize ["modifyvm", :id, "--name", boxName]
@@ -139,7 +204,7 @@ SCRIPT
         end
 
         # Sync Folders
-        # ============
+        # ======================
         syncFolders = configuration['sync'] ?  configuration['sync'] : false
         if(syncFolders)
             syncFolders.each do |folder_info|
@@ -148,36 +213,41 @@ SCRIPT
             end
         end
 
-
+        # ======================
         # DOCKER PROVISIONING 
-        # ============
+        # ======================
 
-        # NGINX proxy
-        node.vm.provision "docker" do |d|
-            d.pull_images "jwilder/nginx-proxy"
+        # Build Other Containers
+        # ----------------------
+        node.vm.provision :docker do |d|
+            # Build all Necessary Images from path
+            Dir.glob('./sites/*.yml').each do |setting_file|
+                settings = YAML::load_file(setting_file);
+                enabled = settings['enabled']
+                if enabled
+                    imageName = settings['name'] ? settings['name'] : File.basename(setting_file)
+                    buildImage = settings['build_image'];
 
-            # sudo docker run -d -p 80:80 -v /var/run/docker.sock:/tmp/docker.sock jwilder/nginx-proxy
-            d.run "jwilder/nginx-proxy",
-                args: "-p 80:80 -v '/var/run/docker.sock:/tmp/docker.sock'"
+                    # BUILD Images.
+                    d.build_image buildImage, args: "-t "+imageName
+                end  
+            end
         end
         
-        # Build and Run Image for each Site
-        Dir.glob('./sites/*.yml').each do |setting_file|
-            settings = YAML::load_file(setting_file);
-
-            name = settings['build_image_name'] ? settings['build_image_name'] : File.basename(setting_file)
-            buildImage = settings['build_image'];
-            domains = settings['domains']
-
-            node.vm.provision "docker" do |d|
-                d.build_image buildImage,
-                    args: "-t "+name
-                d.run name,
-                    args: "--expose 80 -e VIRTUAL_HOST="+domains.join(',')
-            end
-           
+        # Docker Compose.
+        # ----------------------
+        node.vm.provision :docker_compose do |compose|
+            compose.yml = "/vagrant/docker-compose.yml"
+            compose.rebuild = refresh
+            compose.command_options = {rm: "", up: "-d --remove-orphans"}
+            #compose.run =  "always"
         end
-       
-
+        
+        # Docker Cleanup.
+        # ----------------------
+        node.trigger.after :provision do
+            run_remote  "bash /vagrant/cleanup.sh"
+        end
     end
+
 end

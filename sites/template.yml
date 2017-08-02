@@ -2,7 +2,7 @@ name: TEMPLATE
 enabled: false
 
 
-build_image: /path/to/the/dockerfile
+build_image: /guest-machine/path/to/the/dockerfile
 build_image_name: template
 domains: 
     - testapp.dev 
