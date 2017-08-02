@@ -154,7 +154,7 @@ Vagrant.configure("2") do |config|
         DockerCompose['services'] = services
 
         DockerCompose['networks'] = {}
-        for network in allNetworks
+        for network in allNetworks.uniq()
             DockerCompose['networks'][network] = {}
         end
 
@@ -238,7 +238,7 @@ SCRIPT
         # ----------------------
         node.vm.provision :docker_compose do |compose|
             compose.yml = "/vagrant/docker-compose.yml"
-            compose.rebuild = refresh
+            #compose.rebuild = true
             compose.command_options = {rm: "", up: "-d --remove-orphans"}
             #compose.run =  "always"
         end
