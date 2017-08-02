@@ -142,6 +142,10 @@ Vagrant.configure("2") do |config|
                     service['ports'] = settings['ports']
                 end 
 
+                if settings['volumes']
+                    service['volumes'] = settings['volumes']
+                end
+
                 service['environment'] = Array.new
                 if settings['domains']
                     service['environment'].push( "VIRTUAL_HOST=" + settings['domains'].join(','))
@@ -238,7 +242,7 @@ SCRIPT
         # ----------------------
         node.vm.provision :docker_compose do |compose|
             compose.yml = "/vagrant/docker-compose.yml"
-            #compose.rebuild = true
+            compose.rebuild = true
             compose.command_options = {rm: "", up: "-d --remove-orphans"}
             #compose.run =  "always"
         end

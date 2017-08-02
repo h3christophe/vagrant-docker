@@ -3,5 +3,5 @@ keys/*
 !keys/README.md
 sites/*
 !sites/template.yml
-
+docker-compose.yml
 configuration.yml
