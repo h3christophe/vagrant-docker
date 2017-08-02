@@ -97,75 +97,7 @@ Vagrant.configure("2") do |config|
         end
     end
 
-    # Build Docker Compose When Provisioning
-    config.trigger.before :provision do
-        info "Refreshing DockerCompose File"
-
-        dockerFilePath = 'docker-compose.yml'
-
-        DockerCompose = {}
-        DockerCompose['version'] = "3"
-
-        allNetworks = Array.new;
-        services = {};
-
-        # NGINX proxy
-        # ----------------------
-        proxyService = {}
-        proxyService['image'] = "jwilder/nginx-proxy"
-        proxyService['container_name'] = "nginx-proxy"
-        proxyService['ports'] = ["80:80"]
-        proxyService['volumes'] = ["/var/run/docker.sock:/tmp/docker.sock:ro"]
-        proxyService['networks'] = ['proxy']
-        allNetworks.push('proxy');
-        services['nginx-proxy'] = proxyService 
-
-        # Other Sites
-        # ----------------------
-        Dir.glob('./sites/*.yml').each do |setting_file|
-            settings = YAML::load_file(setting_file);
-            enabled = settings['enabled']
-            if enabled
-                name = settings['name']
-
-                service = {}
-                service['image'] = name
-                service['container_name'] = settings['name']
-
-                if settings['networks']
-                    service['networks'] = settings['networks'] ? settings['networks'] : Array.new
-                    service['networks'].push('proxy')
-                    allNetworks = allNetworks + settings['networks']
-                end 
-
-                if settings['ports']
-                    service['ports'] = settings['ports']
-                end 
-
-                if settings['volumes']
-                    service['volumes'] = settings['volumes']
-                end
-
-                service['environment'] = Array.new
-                if settings['domains']
-                    service['environment'].push( "VIRTUAL_HOST=" + settings['domains'].join(','))
-                end
-
-                services[name] = service
-            end 
-        end
-
-        DockerCompose['services'] = services
-
-        DockerCompose['networks'] = {}
-        for network in allNetworks.uniq()
-            DockerCompose['networks'][network] = {}
-        end
-
-        # Write to File
-        File.open(dockerFilePath, 'w') {|f| f.write DockerCompose.to_yaml }
-
-    end
+    
     
     # Define Box
     config.vm.define boxName do |node|
@@ -220,6 +152,86 @@ SCRIPT
         # ======================
         # DOCKER PROVISIONING 
         # ======================
+        
+        # Build Docker Compose When Provisioning
+        # ----------------------
+        config.vm.provision "trigger", :option => "value" do |trigger|
+            trigger.fire do
+        
+            info "============================="
+            info "Refreshing DockerCompose File"
+            info "============================="
+
+            dockerFilePath = 'docker-compose.yml'
+
+            DockerCompose = {}
+            DockerCompose['version'] = "3"
+
+            allNetworks = Array.new;
+            services = {};
+
+            # NGINX proxy
+            # ----------------------
+            proxyService = {}
+            proxyService['image'] = "jwilder/nginx-proxy"
+            proxyService['container_name'] = "nginx-proxy"
+            proxyService['ports'] = ["80:80"]
+            proxyService['volumes'] = ["/var/run/docker.sock:/tmp/docker.sock:ro"]
+            proxyService['networks'] = ['proxy']
+            allNetworks.push('proxy');
+            services['nginx-proxy'] = proxyService 
+
+            # Other Sites
+            # ----------------------
+            Dir.glob('./sites/*.yml').each do |setting_file|
+                settings = YAML::load_file(setting_file);
+                enabled = settings['enabled']
+                if enabled
+                    name = settings['name']
+
+                    service = {}
+                    service['image'] = name
+                    service['container_name'] = settings['name']
+
+                    if settings['networks']
+                        service['networks'] = settings['networks'] ? settings['networks'] : Array.new
+                        service['networks'].push('proxy')
+                        allNetworks = allNetworks + settings['networks']
+                    end 
+
+                    if settings['ports']
+                        service['ports'] = settings['ports']
+                    end 
+
+                    if settings['volumes']
+                        service['volumes'] = settings['volumes']
+                    end
+
+                    if settings['user']
+                        service['user'] = settings['user']
+                    end
+
+                    service['environment'] = Array.new
+                    if settings['domains']
+                        service['environment'].push( "VIRTUAL_HOST=" + settings['domains'].join(','))
+                    end
+
+                    services[name] = service
+                end 
+            end
+
+            DockerCompose['services'] = services
+
+            DockerCompose['networks'] = {}
+            for network in allNetworks.uniq()
+                DockerCompose['networks'][network] = {}
+            end
+
+            # Write to File
+            File.open(dockerFilePath, 'w') {|f| f.write DockerCompose.to_yaml }
+            end
+        end
+
 
         # Build Other Containers
         # ----------------------
@@ -243,8 +255,7 @@ SCRIPT
         node.vm.provision :docker_compose do |compose|
             compose.yml = "/vagrant/docker-compose.yml"
             compose.rebuild = true
-            compose.command_options = {rm: "", up: "-d --remove-orphans"}
-            #compose.run =  "always"
+            compose.command_options = {rm: "", up: "-d --remove-orphans"}   
         end
         
         # Docker Cleanup.
