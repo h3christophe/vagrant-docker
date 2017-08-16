@@ -88,17 +88,20 @@ Vagrant.configure("2") do |config|
     Dir.glob('./sites/*.yml').each do |setting_file|
         settings = YAML::load_file(setting_file);
         enabled = settings['enabled']
+
         if enabled
-            #puts "*Settings (%s)" %[settings]
-            domains = settings['domains']
-            if domains.kind_of?(Array) and !domains.empty?()
-                allDomains = allDomains + settings['domains']
+            services = settings['services'] ? settings['services'] : Array.new;
+            for serviceInfo in services
+                serviceName = serviceInfo[0];
+                settings = serviceInfo[1]
+                domains = settings['domains']
+                if domains.kind_of?(Array) and !domains.empty?()
+                    allDomains = allDomains + settings['domains']
+                end
             end
         end
     end
 
-    
-    
     # Define Box
     config.vm.define boxName do |node|
 
@@ -188,35 +191,32 @@ SCRIPT
                 enabled = settings['enabled']
                 if enabled
                     name = settings['name']
+                    
+                    siteServices = settings['services'] ? settings['services'] : Array.new;
+                    for serviceInfo in siteServices
+                        serviceName = serviceInfo[0];
+                        service = serviceInfo[1]
+                        
+                        service['container_name'] = serviceName
+                        
+                        service['networks'] = service['networks'] ? service['networks'] : Array.new
+                        if service['networks']
+                            service['networks'].push('proxy')
+                            allNetworks = allNetworks + service['networks']
+                        end 
 
-                    service = {}
-                    service['image'] = name
-                    service['container_name'] = settings['name']
+                        service['environment'] = Array.new
+                        if service['domains']
+                            service['environment'].push( "VIRTUAL_HOST=" + service['domains'].join(','))
+                        end
+                        
 
-                    if settings['networks']
-                        service['networks'] = settings['networks'] ? settings['networks'] : Array.new
-                        service['networks'].push('proxy')
-                        allNetworks = allNetworks + settings['networks']
-                    end 
+                        # delete keys not compatible with docker-compose
+                        service.delete('domains');
 
-                    if settings['ports']
-                        service['ports'] = settings['ports']
-                    end 
-
-                    if settings['volumes']
-                        service['volumes'] = settings['volumes']
+                        services[serviceName] = service
                     end
-
-                    if settings['user']
-                        service['user'] = settings['user']
-                    end
-
-                    service['environment'] = Array.new
-                    if settings['domains']
-                        service['environment'].push( "VIRTUAL_HOST=" + settings['domains'].join(','))
-                    end
-
-                    services[name] = service
+                 
                 end 
             end
 
@@ -232,21 +232,23 @@ SCRIPT
             end
         end
 
-
         # Build Other Containers
         # ----------------------
-        node.vm.provision :docker do |d|
-            # Build all Necessary Images from path
-            Dir.glob('./sites/*.yml').each do |setting_file|
-                settings = YAML::load_file(setting_file);
-                enabled = settings['enabled']
-                if enabled
-                    imageName = settings['name'] ? settings['name'] : File.basename(setting_file)
-                    buildImage = settings['build_image'];
+        
+        if false
+            node.vm.provision :docker do |d|
+                # Build all Necessary Images from path
+                Dir.glob('./sites/*.yml').each do |setting_file|
+                    settings = YAML::load_file(setting_file);
+                    enabled = settings['enabled']
+                    if enabled
+                        imageName = settings['name'] ? settings['name'] : File.basename(setting_file)
+                        buildImage = settings['build_image'];
 
-                    # BUILD Images.
-                    d.build_image buildImage, args: "-t "+imageName
-                end  
+                        # BUILD Images.
+                        d.build_image buildImage, args: "-t "+imageName
+                    end  
+                end
             end
         end
         
@@ -257,7 +259,7 @@ SCRIPT
             compose.rebuild = true
             compose.command_options = {rm: "", up: "-d --remove-orphans"}   
         end
-        
+
         # Docker Cleanup.
         # ----------------------
         node.trigger.after :provision do

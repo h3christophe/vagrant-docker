@@ -1,10 +1,16 @@
 name: TEMPLATE
 enabled: false
 
-
-build_image: /guest-machine/path/to/the/dockerfile
-build_image_name: template
-domains: 
-    - testapp.dev 
-    - test.testapp.dev 
-    - another.testapp.dev
+# build_compose: 
+services:
+    service-name:
+        build: /guest-machine/path/to/the/dockerfilefolder
+        image: image-name
+        volumes:
+            - /host-machine/www:/guest-machine/www
+        domains: 
+            - testapp.dev 
+            - test.testapp.dev 
+            - another.testapp.dev 
+        networks:
+            - networkname
