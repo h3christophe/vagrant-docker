@@ -125,12 +125,7 @@ Vagrant.configure("2") do |config|
         sudo service ssh restart
 EOC
 
-        # Host Ip in /etc/hosts/
-        node.vm.provision "shell", inline: <<-SCRIPT
-        host_ip=`sudo netstat -rn | grep "^0.0.0.0 " | cut -d " " -f10`
-        sudo sed -i '/vagrant-host #vagrant-host/d' /etc/hosts
-        sudo echo "$host_ip vagrant-host \#vagrant-host" >> /etc/hosts 
-SCRIPT
+       
 
         # Virtual Box
         # ======================
@@ -156,6 +151,17 @@ SCRIPT
         # DOCKER PROVISIONING 
         # ======================
         
+        # Host Ip in /etc/hosts/
+        # ----------------------
+        config.vm.provision "trigger", :option => "value" do |trigger|
+            trigger.fire do 
+            info "============================="
+            info "Adding host ip address to the Guest machine"
+            info "============================="
+            run_remote  "bash /vagrant/vagrant-hostip.sh"
+            end
+        end
+
         # Build Docker Compose When Provisioning
         # ----------------------
         config.vm.provision "trigger", :option => "value" do |trigger|
@@ -164,7 +170,11 @@ SCRIPT
             info "============================="
             info "Refreshing DockerCompose File"
             info "============================="
-
+            
+            file = File.open("hostip", "r")
+            hostip = file.read
+            file.close
+            
             dockerFilePath = 'docker-compose.yml'
 
             DockerCompose = {}
@@ -210,13 +220,16 @@ SCRIPT
                             service['environment'].push( "VIRTUAL_HOST=" + service['domains'].join(','))
                         end
                         
-
+                        
                         # delete keys not compatible with docker-compose
                         service.delete('domains');
 
+                        # Vagrant Hostname.
+                        service['extra_hosts'] = Array.new
+                        service['extra_hosts'].push("vagrant-host:"+hostip.strip);
+                        
                         services[serviceName] = service
-                    end
-                 
+                    end               
                 end 
             end
 
